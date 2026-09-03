@@ -61,6 +61,42 @@ Requirements:
   processing plus two OpenAI round-trips can be slow; adjust it in
   `src/worker/firestoreTrigger.ts` if jobs time out.
 
+### Mobile/backend rollout compatibility
+
+Deploy the functions and rules before distributing a mobile build that uses
+new import capabilities. Building or installing an APK does **not** update the
+Firebase backend. The mobile client keeps sending the legacy `instagram_url`
+tag for Instagram links; the current backend accepts both that tag and
+`social_url`. Other platforms, upload recovery, and retained thumbnails require
+the updated functions and Storage rules.
+
+`test/fixtures/recipe_import_requests.json` at the repository root is shared by
+the Flutter request tests and the backend contract tests. It includes the
+reported Instagram link and native share-sheet text.
+
+### Link thumbnails and planning estimates (schema 1.1)
+
+- Link imports try multiple OpenGraph/Twitter/JSON-LD images, video posters and
+  `image_src` links, then the alternate public page representation if needed.
+  Large social pages use a bounded 600 KB HTML prefix so valid head metadata
+  is not discarded because of megabytes of unrelated scripts later in the page.
+  Image responses are decoded and normalized to JPEG; video URLs, login HTML,
+  tiny tracking pixels and private-network redirects are not accepted as photos.
+  A thumbnail Storage upload is retried once. The stable retained URL is copied
+  to the draft and cookbook; inaccessible source images are reported in the UI.
+- The analysis prompt may estimate missing **servings and recipe-level times**
+  from batch quantities and the described preparation/cooking method. These
+  use `servings.isEstimated`, `times.estimatedFields` and `estimateReason`, are
+  marked for review, and remain labeled after saving. Known source values are
+  preserved. Ingredient quantities, safety instructions and step durations are
+  not invented. No reasonable basis for estimation still means null.
+- The strict output schema requires provenance fields for new AI responses;
+  older stored drafts remain readable without them. This follows the
+  [Structured Outputs guidance](https://developers.openai.com/api/docs/guides/structured-outputs).
+- Deploy the worker, approval function and related functions before testing
+  these changes. Existing drafts are not silently rewritten: import the source
+  again to fetch fresh metadata and generate estimates with the new prompt.
+
 ## Configuration
 
 All tunables in `src/config.ts`, overridable via environment/secret values
@@ -72,6 +108,7 @@ the `needs_review` confidence threshold.
 
 | Symptom | Likely cause | Where to look |
 |---|---|---|
+| `createImport` immediately returns `invalid-argument` / `Invalid import request` | Client/backend schema mismatch; this happens before fetching the video. Check `details.fieldErrors`, especially `sourceType` | Deploy the current functions to the same project used by the app; do not show the exception's stack trace in the UI |
 | Jobs stuck in `queued` | The Firestore trigger did not deploy or a stale job needs re-kicking | `firebase functions:log --only processImportOnQueued` |
 | A social-URL import lands in `awaiting_user_upload` | The public page did not expose enough caption data; choose/share the video to continue | `src/providers/mediaSourceResolver.ts` |
 | `ANALYSIS_TEMPORARILY_UNAVAILABLE` spikes | OpenAI rate limiting or an outage | Check `usage`/retry counts on the job doc; `openaiRecipeAnalysis.ts` classifies 429/5xx as retryable |

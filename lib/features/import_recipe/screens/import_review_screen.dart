@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/services/recipe_import_error.dart';
 import '../../../core/services/recipe_import_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/kitchen_app_bar.dart';
+import '../../../core/widgets/recipe_planning_summary.dart';
 import '../../../data/models/meal_recipe.dart';
 import '../../../data/models/recipe_draft.dart';
 import '../../../data/models/recipe_import_job.dart';
@@ -118,12 +120,12 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   Future<void> _approve(RecipeDraft draft, String? thumbnailUrl) async {
     setState(() => _approving = true);
     try {
-      await RecipeImportService.instance.approve(widget.jobId);
+      final recipeId = await RecipeImportService.instance.approve(widget.jobId);
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
           builder: (_) => RecipeDetailScreen(
-            mealRecipe: _toMealRecipe(draft, thumbnailUrl),
+            mealRecipe: _toMealRecipe(recipeId, draft, thumbnailUrl),
           ),
         ),
       );
@@ -131,7 +133,7 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('Could not save recipe: $e')));
+        ).showSnackBar(SnackBar(content: Text(recipeImportErrorMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _approving = false);
@@ -163,9 +165,12 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
                     height: 220,
                     width: double.infinity,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                    errorBuilder: (_, _, _) => const _ThumbnailUnavailable(),
                   ),
                 ),
+                const SizedBox(height: 18),
+              ] else ...[
+                const _ThumbnailUnavailable(),
                 const SizedBox(height: 18),
               ],
               if (draft.status == 'needs_review')
@@ -198,7 +203,10 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
                 ),
               ],
               const SizedBox(height: 16),
-              _MetaRow(draft: draft),
+              RecipePlanningSummary(
+                servings: draft.servings,
+                times: draft.times,
+              ),
               const SizedBox(height: 24),
               _SectionHeader('Ingredients'),
               ...draft.ingredients.asMap().entries.map(
@@ -241,8 +249,12 @@ class _ImportReviewScreenState extends State<ImportReviewScreen> {
   }
 }
 
-MealRecipe _toMealRecipe(RecipeDraft draft, String? thumbnailUrl) => MealRecipe(
-  id: '',
+MealRecipe _toMealRecipe(
+  String recipeId,
+  RecipeDraft draft,
+  String? thumbnailUrl,
+) => MealRecipe(
+  id: recipeId,
   title: draft.title ?? 'Untitled Recipe',
   imageUrl: thumbnailUrl ?? '',
   instructions: draft.steps.map((s) => s.instruction).join('\n'),
@@ -252,7 +264,34 @@ MealRecipe _toMealRecipe(RecipeDraft draft, String? thumbnailUrl) => MealRecipe(
   category: draft.courses.isNotEmpty ? draft.courses.first : null,
   area: draft.cuisines.isNotEmpty ? draft.cuisines.first : null,
   tags: [...draft.cuisines, ...draft.courses, ...draft.dietaryTags],
+  servings: draft.servings,
+  times: draft.times,
 );
+
+class _ThumbnailUnavailable extends StatelessWidget {
+  const _ThumbnailUnavailable();
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: AppColors.searchFill,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: const Row(
+      children: [
+        Icon(Icons.image_not_supported_outlined, color: AppColors.textMuted),
+        SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'No preview image is available from this link.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
 class _Banner extends StatelessWidget {
   const _Banner({required this.icon, required this.text});
@@ -302,62 +341,6 @@ class _SectionHeader extends StatelessWidget {
           fontWeight: FontWeight.w700,
           color: AppColors.textPrimary,
         ),
-      ),
-    );
-  }
-}
-
-class _MetaRow extends StatelessWidget {
-  const _MetaRow({required this.draft});
-  final RecipeDraft draft;
-
-  @override
-  Widget build(BuildContext context) {
-    final servings = draft.servings?.quantity;
-    final total = draft.times.totalMinutes;
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _MetaChip(
-          icon: Icons.people_outline,
-          label: servings != null ? '$servings servings' : 'Servings: unknown',
-        ),
-        _MetaChip(
-          icon: Icons.timer_outlined,
-          label: total != null ? '$total min' : 'Time: unknown',
-        ),
-      ],
-    );
-  }
-}
-
-class _MetaChip extends StatelessWidget {
-  const _MetaChip({required this.icon, required this.label});
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.chipInactive,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: AppColors.textSecondary),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: GoogleFonts.dmSans(
-              fontSize: 12,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
       ),
     );
   }

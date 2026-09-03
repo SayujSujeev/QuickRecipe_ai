@@ -5,6 +5,7 @@ import '../../../data/recipes.dart';
 import '../../../data/models/meal_recipe.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/adjust_servings_sheet.dart';
+import '../../../core/widgets/recipe_planning_summary.dart';
 import 'cooking_step_screen.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
@@ -28,6 +29,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   int _servings = 2;
   int _tab = 0;
   final Set<int> _checked = {};
+
+  @override
+  void initState() {
+    super.initState();
+    final importedServings = widget.mealRecipe?.servings?.quantity;
+    if (importedServings != null &&
+        importedServings.isFinite &&
+        importedServings > 0) {
+      _servings = importedServings.ceil();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -168,6 +180,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                                   color: Color(0xFFECE7E1),
                                 ),
                                 const SizedBox(height: 14),
+                                if (meal?.servings != null ||
+                                    meal?.times != null) ...[
+                                  RecipePlanningSummary(
+                                    servings: meal?.servings,
+                                    times: meal?.times,
+                                  ),
+                                  const SizedBox(height: 14),
+                                ],
                                 Row(
                                   children: [
                                     Text(

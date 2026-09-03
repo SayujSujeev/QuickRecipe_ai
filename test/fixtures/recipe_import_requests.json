@@ -1,0 +1,44 @@
+[
+  {
+    "description": "Instagram URL from the reported screenshot",
+    "sharedText": "https://www.instagram.com/reel/DaSvyD2zWLs/?igsh=N3QybzFwZ2c0eTFq",
+    "sourceType": "instagram_url",
+    "sourceUrl": "https://www.instagram.com/reel/DaSvyD2zWLs/"
+  },
+  {
+    "description": "Instagram native share text with surrounding prose",
+    "sharedText": "Try this recipe!\n(https://www.instagram.com/reel/DaSvyD2zWLs/?igsh=shared). Shared via Instagram",
+    "sourceType": "instagram_url",
+    "sourceUrl": "https://www.instagram.com/reel/DaSvyD2zWLs/"
+  },
+  {
+    "description": "Alternate Instagram host and plural reels path",
+    "sharedText": "https://instagram.com/reels/ABC_123-xy?utm_source=share#comments",
+    "sourceType": "instagram_url",
+    "sourceUrl": "https://www.instagram.com/reel/ABC_123-xy/"
+  },
+  {
+    "description": "Instagram post with case-insensitive host",
+    "sharedText": "HTTPS://WWW.INSTAGRAM.COM/p/ABC123/",
+    "sourceType": "instagram_url",
+    "sourceUrl": "https://www.instagram.com/p/ABC123/"
+  },
+  {
+    "description": "YouTube native share text preserves video query parameters",
+    "sharedText": "Watch this https://www.youtube.com/watch?v=ABC123&t=20",
+    "sourceType": "social_url",
+    "sourceUrl": "https://www.youtube.com/watch?v=ABC123&t=20"
+  },
+  {
+    "description": "TikTok shortened share link",
+    "sharedText": "Try this! https://vm.tiktok.com/ZABC123/",
+    "sourceType": "social_url",
+    "sourceUrl": "https://vm.tiktok.com/ZABC123/"
+  },
+  {
+    "description": "Facebook share link",
+    "sharedText": "https://www.facebook.com/share/r/ABC123/",
+    "sourceType": "social_url",
+    "sourceUrl": "https://www.facebook.com/share/r/ABC123/"
+  }
+]

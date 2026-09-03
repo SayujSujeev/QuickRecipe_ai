@@ -17,6 +17,7 @@ import type {
   TranscriptionProvider,
 } from '../providers/types';
 import { selectFrameSubset } from './frameSelection';
+import { cleanupLocalFile } from '../providers/storageMediaStore';
 
 export interface PipelineDeps {
   repo: ImportJobRepository;
@@ -57,6 +58,7 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
     return;
   }
 
+  let thumbnailLocalPath: string | null = null;
   try {
     job = await transitionTo(deps, job, 'acquiring_source', 'acquiringSourceAt');
     // URL sources may expose only public metadata. If there is not enough
@@ -66,7 +68,6 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
 
     let transcriptText = '';
     let frames: Awaited<ReturnType<typeof selectFrameSubset>> = [];
-    let thumbnailLocalPath: string | null = null;
 
     if (resolved.kind === 'video') {
       job = await transitionTo(deps, job, 'preprocessing', 'preprocessingAt');
@@ -184,11 +185,21 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
       return;
     }
 
-    const thumbnailUrl = thumbnailLocalPath
-      ? await deps.mediaStore
-          .persistThumbnail(job.userId, job.jobId, thumbnailLocalPath)
-          .catch(() => null)
-      : null;
+    let thumbnailUrl = job.thumbnailUrl ?? null;
+    if (thumbnailLocalPath) {
+      // A transient Storage failure should not permanently lose an otherwise
+      // valid source image. Retry once before continuing without a new image.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          thumbnailUrl = await deps.mediaStore.persistThumbnail(job.userId, job.jobId, thumbnailLocalPath);
+          break;
+        } catch {
+          if (attempt === 1) {
+            console.warn('Could not persist recipe thumbnail', { jobId: job.jobId });
+          }
+        }
+      }
+    }
     if (thumbnailUrl) {
       await repo.update(job.jobId, { thumbnailUrl });
       job = { ...job, thumbnailUrl };
@@ -242,6 +253,8 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
     }
     await deps.mediaStore.deleteAll(jobId).catch(() => undefined);
     throw importError;
+  } finally {
+    if (thumbnailLocalPath) await cleanupLocalFile(thumbnailLocalPath);
   }
 }
 

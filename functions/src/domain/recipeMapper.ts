@@ -32,6 +32,21 @@ export function mapDraftToCanonicalRecipe(
     source: sourceUrl,
     youtube: null,
     importedFromReel: true,
+    servings: draft.servings ? {
+      quantity: draft.servings.quantity,
+      label: draft.servings.label,
+      confidence: draft.servings.confidence,
+      isEstimated: draft.servings.isEstimated ?? false,
+      estimateReason: draft.servings.estimateReason ?? null,
+    } : null,
+    times: {
+      prepMinutes: draft.times.prepMinutes,
+      cookMinutes: draft.times.cookMinutes,
+      totalMinutes: draft.times.totalMinutes,
+      confidence: draft.times.confidence,
+      estimatedFields: draft.times.estimatedFields ?? [],
+      estimateReason: draft.times.estimateReason ?? null,
+    },
     importSchemaVersion: draft.schemaVersion,
   };
 }

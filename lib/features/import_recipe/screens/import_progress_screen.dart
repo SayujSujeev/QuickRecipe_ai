@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/services/recipe_import_error.dart';
 import '../../../core/services/recipe_import_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/kitchen_app_bar.dart';
@@ -124,7 +125,7 @@ class _UploadRecoveryPanelState extends State<_UploadRecoveryPanel> {
         file.path,
       );
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) setState(() => _error = recipeImportErrorMessage(error));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }

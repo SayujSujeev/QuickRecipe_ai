@@ -64,6 +64,9 @@ export const timeSchema = z
     prepMinutes: z.number().int().nonnegative().nullable(),
     cookMinutes: z.number().int().nonnegative().nullable(),
     totalMinutes: z.number().int().nonnegative().nullable(),
+    // Optional when reading older persisted drafts; required in new AI output.
+    estimatedFields: z.array(z.enum(['prepMinutes', 'cookMinutes', 'totalMinutes'])).optional(),
+    estimateReason: z.string().nullable().optional(),
     confidence,
     evidence: z.array(evidenceReferenceSchema),
   })
@@ -73,6 +76,8 @@ export const servingSchema = z
   .object({
     quantity: z.number().nonnegative().nullable(),
     label: z.string().nullable(),
+    isEstimated: z.boolean().optional(),
+    estimateReason: z.string().nullable().optional(),
     confidence,
     evidence: z.array(evidenceReferenceSchema),
   })
@@ -178,11 +183,15 @@ export function recipeDraftJsonSchema(): Record<string, unknown> {
   const times = {
     type: 'object',
     additionalProperties: false,
-    required: ['prepMinutes', 'cookMinutes', 'totalMinutes', 'confidence', 'evidence'],
+    required: ['prepMinutes', 'cookMinutes', 'totalMinutes', 'estimatedFields', 'estimateReason', 'confidence', 'evidence'],
     properties: {
       prepMinutes: { type: ['integer', 'null'] },
       cookMinutes: { type: ['integer', 'null'] },
       totalMinutes: { type: ['integer', 'null'] },
+      estimatedFields: {
+        type: 'array', items: { type: 'string', enum: ['prepMinutes', 'cookMinutes', 'totalMinutes'] },
+      },
+      estimateReason: { type: ['string', 'null'] },
       confidence: { type: 'number' },
       evidence: { type: 'array', items: evidenceRef },
     },
@@ -191,10 +200,12 @@ export function recipeDraftJsonSchema(): Record<string, unknown> {
   const serving = {
     type: 'object',
     additionalProperties: false,
-    required: ['quantity', 'label', 'confidence', 'evidence'],
+    required: ['quantity', 'label', 'isEstimated', 'estimateReason', 'confidence', 'evidence'],
     properties: {
       quantity: { type: ['number', 'null'] },
       label: { type: ['string', 'null'] },
+      isEstimated: { type: 'boolean' },
+      estimateReason: { type: ['string', 'null'] },
       confidence: { type: 'number' },
       evidence: { type: 'array', items: evidenceRef },
     },
@@ -246,6 +257,21 @@ export interface DomainValidationIssue {
 export function validateRecipeDraftDomain(draft: RecipeDraft): DomainValidationIssue[] {
   const issues: DomainValidationIssue[] = [];
 
+  if (draft.servings?.isEstimated && (
+    !draft.servings.quantity || !draft.servings.estimateReason?.trim()
+  )) {
+    issues.push({ path: 'servings', message: 'Estimated servings require a positive quantity and an estimate reason.' });
+  }
+  const estimatedTimes = draft.times.estimatedFields ?? [];
+  if (estimatedTimes.length > 0 && !draft.times.estimateReason?.trim()) {
+    issues.push({ path: 'times.estimateReason', message: 'Estimated times require a brief explanation of the assumptions.' });
+  }
+  for (const field of estimatedTimes) {
+    if (draft.times[field] === null) {
+      issues.push({ path: `times.${field}`, message: 'An estimated time must have a value.' });
+    }
+  }
+
   const ids = draft.ingredients.map((i) => i.id);
   const uniqueIds = new Set(ids);
   if (uniqueIds.size !== ids.length) {
@@ -290,15 +316,24 @@ export function reconcileTotalMinutes(draft: RecipeDraft): RecipeDraft {
     draft.times.prepMinutes !== null &&
     draft.times.cookMinutes !== null
   ) {
+    const estimatedFields = draft.times.estimatedFields ?? [];
+    const totalIsEstimated = estimatedFields.includes('prepMinutes') || estimatedFields.includes('cookMinutes');
     return {
       ...draft,
-      times: { ...draft.times, totalMinutes: draft.times.prepMinutes + draft.times.cookMinutes },
+      times: {
+        ...draft.times,
+        totalMinutes: draft.times.prepMinutes + draft.times.cookMinutes,
+        estimatedFields: totalIsEstimated
+          ? [...new Set([...estimatedFields, 'totalMinutes' as const])]
+          : estimatedFields,
+      },
     };
   }
   return draft;
 }
 
 export function needsReview(draft: RecipeDraft, confidenceThreshold: number): boolean {
+  if (draft.servings?.isEstimated || (draft.times.estimatedFields?.length ?? 0) > 0) return true;
   if (draft.status !== 'complete') return true;
   if (draft.overallConfidence < confidenceThreshold) return true;
   if (draft.steps.length === 0) return true;

@@ -1,4 +1,6 @@
-/// A recipe sourced from TheMealDB, stored in the Firestore `recipes`
+import 'recipe_draft.dart';
+
+/// A recipe sourced from TheMealDB or a social import, stored in Firestore's `recipes`
 /// collection (doc id = TheMealDB `idMeal`, so re-imports just refresh it).
 class MealRecipe {
   const MealRecipe({
@@ -13,6 +15,8 @@ class MealRecipe {
     this.source,
     this.youtube,
     this.nutrition,
+    this.servings,
+    this.times,
   });
 
   final String id;
@@ -29,6 +33,8 @@ class MealRecipe {
   /// AI-estimated macros, filled in separately after import (see
   /// MacroEstimatorService). Null until that backfill has run for this doc.
   final RecipeNutrition? nutrition;
+  final DraftServing? servings;
+  final DraftTime? times;
 
   /// Instructions split into individual steps for the cooking-steps UI.
   /// TheMealDB returns instructions as free text, usually newline separated.
@@ -88,6 +94,14 @@ class MealRecipe {
       tags: ((data['tags'] as List?) ?? []).cast<String>(),
       source: data['source'] as String?,
       youtube: data['youtube'] as String?,
+      servings: data['servings'] is Map
+          ? DraftServing.fromMap(
+              Map<String, dynamic>.from(data['servings'] as Map),
+            )
+          : null,
+      times: data['times'] is Map
+          ? DraftTime.fromMap(Map<String, dynamic>.from(data['times'] as Map))
+          : null,
       nutrition: data['nutrition'] == null
           ? null
           : RecipeNutrition.fromMap(
@@ -107,6 +121,8 @@ class MealRecipe {
     'tags': tags,
     'source': source,
     'youtube': youtube,
+    if (servings != null) 'servings': servings!.toMap(),
+    if (times != null) 'times': times!.toMap(),
   };
 }
 

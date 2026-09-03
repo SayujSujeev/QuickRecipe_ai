@@ -11,6 +11,12 @@ import type { RecipeImportJob } from '../src/domain/importJob';
 import { newStageTimestamps } from '../src/domain/importJob';
 import { ImportError } from '../src/domain/errors';
 
+// Fixture paths are not real generated files. Never remove an unrelated file
+// that happens to use one of these names on the test machine.
+jest.mock('../src/providers/storageMediaStore', () => ({
+  cleanupLocalFile: jest.fn().mockResolvedValue(undefined),
+}));
+
 function baseJob(overrides: Partial<RecipeImportJob> = {}): RecipeImportJob {
   const now = Date.now();
   return {
@@ -138,6 +144,26 @@ function makeDeps(overrides: Partial<PipelineDeps> = {}) {
 }
 
 describe('runImportPipeline (happy path)', () => {
+  it('retries thumbnail persistence once and saves the recovered URL with the draft', async () => {
+    const { deps, repo, mediaStore, persistedDrafts } = makeDeps();
+    const persist = jest.spyOn(mediaStore, 'persistThumbnail')
+      .mockRejectedValueOnce(new Error('temporary storage outage'));
+    await repo.create(baseJob());
+    await runImportPipeline('job_1', deps);
+    expect(persist).toHaveBeenCalledTimes(2);
+    expect(persistedDrafts[0]!.thumbnailUrl).toBe('https://cdn.example.com/recipe.jpg');
+  });
+
+  it('preserves estimates and routes the draft to review', async () => {
+    const draft = fixtureCompleteDraft();
+    draft.servings = { ...draft.servings!, isEstimated: true, estimateReason: 'Based on ingredient quantities.' };
+    const onPersistDraft = jest.fn().mockResolvedValue('draft_1');
+    const { deps, repo } = makeDeps({ analysis: new MockRecipeAnalysisProvider(draft), onPersistDraft });
+    await repo.create(baseJob());
+    await runImportPipeline('job_1', deps);
+    expect((await repo.get('job_1'))!.state).toBe('needs_review');
+    expect(onPersistDraft.mock.calls[0]![2].servings.isEstimated).toBe(true);
+  });
   it('walks queued -> completed and persists a draft', async () => {
     const { deps, repo, mediaStore, persistedDrafts } = makeDeps();
     await repo.create(baseJob());

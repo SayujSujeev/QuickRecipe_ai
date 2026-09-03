@@ -7,6 +7,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/models/recipe_import_job.dart';
+import 'recipe_import_error.dart';
+import 'recipe_import_request.dart';
 
 /// Client for the recipe-reel import pipeline. All fetching and AI work
 /// happens server-side (Cloud Functions); this service only creates jobs
@@ -28,15 +30,15 @@ class RecipeImportService {
     String targetLanguage = 'en',
     String measurementSystem = 'metric',
   }) async {
+    final request = buildUrlImportRequest(
+      sourceUrl,
+      idempotencyKey: _uuid.v4(),
+      targetLanguage: targetLanguage,
+      measurementSystem: measurementSystem,
+    );
     final result = await _functions
         .httpsCallable('createImport')
-        .call<Map<String, dynamic>>({
-          'sourceType': 'social_url',
-          'sourceUrl': sourceUrl,
-          'targetLanguage': targetLanguage,
-          'measurementSystem': measurementSystem,
-          'idempotencyKey': _uuid.v4(),
-        });
+        .call<Map<String, dynamic>>(request);
     return RecipeImportJob.fromMap(
       Map<String, dynamic>.from(result.data['job'] as Map),
     );
@@ -72,14 +74,18 @@ class RecipeImportService {
   Future<void> continueWithVideo(RecipeImportJob job, String localPath) async {
     final file = File(localPath);
     final size = await file.length();
-    if (size <= 0) throw StateError('The selected video is empty.');
+    if (size <= 0) {
+      throw const RecipeImportException('The selected video is empty.');
+    }
     if (size > 150 * 1024 * 1024) {
-      throw StateError('Choose a video smaller than 150 MB.');
+      throw const RecipeImportException('Choose a video smaller than 150 MB.');
     }
 
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || uid != job.userId) {
-      throw StateError('Please sign in again before uploading the video.');
+      throw const RecipeImportException(
+        'Please sign in again before uploading the video.',
+      );
     }
     final storagePath = 'recipeImports/$uid/${job.jobId}/source';
     await _storage

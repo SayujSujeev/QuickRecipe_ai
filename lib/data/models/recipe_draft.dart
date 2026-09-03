@@ -1,7 +1,6 @@
 /// Mirrors the server's strict Structured Outputs recipe schema
-/// (functions/src/domain/recipeSchema.ts, schemaVersion 1.0.0). Unknown
-/// exact facts stay `null` here too — the UI must never invent a value to
-/// fill a gap.
+/// (functions/src/domain/recipeSchema.ts). Planning estimates are explicitly
+/// labeled; the client never invents values when the server returns null.
 class RecipeDraft {
   const RecipeDraft({
     required this.schemaVersion,
@@ -86,15 +85,37 @@ class DraftServing {
     required this.quantity,
     required this.label,
     required this.confidence,
+    this.isEstimated = false,
+    this.estimateReason,
   });
   final double? quantity;
   final String? label;
   final double confidence;
+  final bool isEstimated;
+  final String? estimateReason;
+
+  String get displayLabel {
+    if (quantity == null) return 'Servings not available';
+    final amount = quantity! == quantity!.roundToDouble()
+        ? quantity!.toInt().toString()
+        : quantity.toString();
+    return '$amount servings${isEstimated ? ' · estimated' : ''}';
+  }
+
+  Map<String, dynamic> toMap() => {
+    'quantity': quantity,
+    'label': label,
+    'confidence': confidence,
+    'isEstimated': isEstimated,
+    'estimateReason': estimateReason,
+  };
 
   factory DraftServing.fromMap(Map<String, dynamic> map) => DraftServing(
     quantity: (map['quantity'] as num?)?.toDouble(),
     label: map['label'] as String?,
     confidence: (map['confidence'] as num?)?.toDouble() ?? 0.0,
+    isEstimated: map['isEstimated'] as bool? ?? false,
+    estimateReason: map['estimateReason'] as String?,
   );
 }
 
@@ -104,17 +125,38 @@ class DraftTime {
     required this.cookMinutes,
     required this.totalMinutes,
     required this.confidence,
+    this.estimatedFields = const [],
+    this.estimateReason,
   });
   final int? prepMinutes;
   final int? cookMinutes;
   final int? totalMinutes;
   final double confidence;
+  final List<String> estimatedFields;
+  final String? estimateReason;
+
+  bool get isTotalEstimated => estimatedFields.contains('totalMinutes');
+
+  String get displayLabel => totalMinutes == null
+      ? 'Time not available'
+      : '$totalMinutes min${isTotalEstimated ? ' · estimated' : ''}';
+
+  Map<String, dynamic> toMap() => {
+    'prepMinutes': prepMinutes,
+    'cookMinutes': cookMinutes,
+    'totalMinutes': totalMinutes,
+    'confidence': confidence,
+    'estimatedFields': estimatedFields,
+    'estimateReason': estimateReason,
+  };
 
   factory DraftTime.fromMap(Map<String, dynamic> map) => DraftTime(
     prepMinutes: (map['prepMinutes'] as num?)?.toInt(),
     cookMinutes: (map['cookMinutes'] as num?)?.toInt(),
     totalMinutes: (map['totalMinutes'] as num?)?.toInt(),
     confidence: (map['confidence'] as num?)?.toDouble() ?? 0.0,
+    estimatedFields: ((map['estimatedFields'] as List?) ?? []).cast<String>(),
+    estimateReason: map['estimateReason'] as String?,
   );
 }
 

@@ -8,6 +8,14 @@ import {
 import { fixtureCompleteDraft } from '../src/providers/mocks';
 
 describe('recipeDraftSchema', () => {
+  it('accepts labeled planning estimates and remains compatible with legacy drafts', () => {
+    const draft = fixtureCompleteDraft();
+    draft.servings = { ...draft.servings!, isEstimated: true, estimateReason: 'Based on batch size.' };
+    draft.times = { ...draft.times, estimatedFields: ['prepMinutes'], estimateReason: 'Chopping and mixing.' };
+    expect(recipeDraftSchema.safeParse(draft).success).toBe(true);
+    expect(validateRecipeDraftDomain(draft)).toEqual([]);
+    expect(recipeDraftSchema.safeParse(fixtureCompleteDraft()).success).toBe(true);
+  });
   it('accepts a well-formed complete draft', () => {
     const result = recipeDraftSchema.safeParse(fixtureCompleteDraft());
     expect(result.success).toBe(true);
@@ -33,6 +41,17 @@ describe('recipeDraftSchema', () => {
 });
 
 describe('recipeDraftJsonSchema', () => {
+  it('requires estimate metadata in new structured output, including nested objects', () => {
+    function check(value: unknown): void {
+      if (!value || typeof value !== 'object') return;
+      const object = value as Record<string, unknown>;
+      if (object.type === 'object') {
+        expect(new Set(object.required as string[])).toEqual(new Set(Object.keys(object.properties as object)));
+      }
+      Object.values(object).forEach(check);
+    }
+    check(recipeDraftJsonSchema());
+  });
   it('sets additionalProperties: false on every nested object', () => {
     const schema = recipeDraftJsonSchema();
     const asString = JSON.stringify(schema);
@@ -49,6 +68,14 @@ describe('recipeDraftJsonSchema', () => {
 });
 
 describe('validateRecipeDraftDomain', () => {
+  it('rejects unsubstantiated estimate metadata for a corrective retry', () => {
+    const draft = fixtureCompleteDraft();
+    draft.servings = { ...draft.servings!, quantity: null, isEstimated: true };
+    draft.times = { ...draft.times, prepMinutes: null, estimatedFields: ['prepMinutes'] };
+    expect(validateRecipeDraftDomain(draft).map((i) => i.path)).toEqual([
+      'servings', 'times.estimateReason', 'times.prepMinutes',
+    ]);
+  });
   it('finds no issues on a valid draft', () => {
     expect(validateRecipeDraftDomain(fixtureCompleteDraft())).toEqual([]);
   });
@@ -76,6 +103,16 @@ describe('validateRecipeDraftDomain', () => {
 });
 
 describe('reconcileTotalMinutes', () => {
+  it('marks a derived total estimated if either of its parts was estimated', () => {
+    const draft = fixtureCompleteDraft({ times: {
+      prepMinutes: 10, cookMinutes: 20, totalMinutes: null, confidence: 0.6, evidence: [],
+      estimatedFields: ['prepMinutes'], estimateReason: 'Typical chopping time.',
+    } });
+    const reconciled = reconcileTotalMinutes(draft);
+    expect(reconciled.times.totalMinutes).toBe(30);
+    expect(reconciled.times.cookMinutes).toBe(20);
+    expect(reconciled.times.estimatedFields).toEqual(['prepMinutes', 'totalMinutes']);
+  });
   it('fills totalMinutes only when null and both parts are known', () => {
     const draft = fixtureCompleteDraft({
       times: { prepMinutes: 5, cookMinutes: 10, totalMinutes: null, confidence: 0.9, evidence: [] },
@@ -99,6 +136,14 @@ describe('reconcileTotalMinutes', () => {
 });
 
 describe('needsReview', () => {
+  it('requires review for estimates even when overall confidence is high', () => {
+    const draft = fixtureCompleteDraft();
+    draft.servings = { ...draft.servings!, isEstimated: true, estimateReason: 'Batch size.' };
+    expect(needsReview(draft, 0.8)).toBe(true);
+    draft.servings = null;
+    draft.times.estimatedFields = ['prepMinutes'];
+    expect(needsReview(draft, 0.8)).toBe(true);
+  });
   it('is false for a high-confidence complete draft with known quantities', () => {
     expect(needsReview(fixtureCompleteDraft(), 0.8)).toBe(false);
   });

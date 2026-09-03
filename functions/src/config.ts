@@ -48,7 +48,7 @@ export const config = {
     confidenceReviewThreshold: envFloat('IMPORT_CONFIDENCE_REVIEW_THRESHOLD', 0.8),
     unknownQuantityReviewRatio: 0.25,
   },
-  schemaVersion: '1.0.0',
-  promptVersion: '1.0.0',
+  schemaVersion: '1.1.0',
+  promptVersion: '1.1.0',
   preprocessingVersion: '1.0.0',
 } as const;

@@ -2,6 +2,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { promises as fs } from 'fs';
+import sharp from 'sharp';
 import type { MediaSourceResolver, ResolvedSource, TemporaryMediaStore } from './types';
 import type { RecipeImportJob } from '../domain/importJob';
 import { ImportError } from '../domain/errors';
@@ -10,11 +11,14 @@ import { assertPublicHost, FETCH_SAFETY } from '../security/urlSafety';
 const MIN_USEFUL_CAPTION_CHARS = 8;
 const MAX_HTML_BYTES = 600_000;
 const MAX_THUMBNAIL_BYTES = 12 * 1024 * 1024;
+const MAX_THUMBNAIL_ATTEMPTS = 4;
+const BROWSER_USER_AGENT = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36';
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
 export interface PublicSocialMetadata {
   caption: string | null;
   thumbnailUrl: string | null;
+  thumbnailUrls: string[];
 }
 
 /**
@@ -41,63 +45,78 @@ export class DefaultMediaSourceResolver implements MediaSourceResolver {
     if (job.sourceType === 'uploaded_video') throw new ImportError('UPLOAD_REQUIRED');
     if (!job.sourceUrl) throw new ImportError('SOURCE_URL_INVALID');
 
-    const metadata = await recoverPublicMetadata(job.sourceUrl).catch(() => null);
-    const caption = metadata?.caption?.trim() ?? '';
+    let caption = '';
+    let localThumbnailPath: string | null = null;
+    const attempted = new Set<string>();
+    for await (const metadata of recoverPublicMetadata(job.sourceUrl)) {
+      caption = chooseLonger(caption, metadata.caption)?.trim() ?? '';
+      if (!localThumbnailPath) {
+        for (const candidate of metadata.thumbnailUrls) {
+          if (attempted.has(candidate) || attempted.size >= MAX_THUMBNAIL_ATTEMPTS) continue;
+          attempted.add(candidate);
+          localThumbnailPath = await downloadPublicThumbnail(candidate, job.sourceUrl).catch(() => null);
+          if (localThumbnailPath) break;
+        }
+      }
+      if (caption.length >= MIN_USEFUL_CAPTION_CHARS && localThumbnailPath) break;
+    }
     if (caption.length < MIN_USEFUL_CAPTION_CHARS) {
+      if (localThumbnailPath) await fs.rm(localThumbnailPath, { force: true }).catch(() => undefined);
       throw new ImportError('SOURCE_NOT_ACCESSIBLE');
     }
-
-    const localThumbnailPath = metadata?.thumbnailUrl
-      ? await downloadPublicThumbnail(metadata.thumbnailUrl).catch(() => null)
-      : null;
     return { kind: 'caption', caption, localThumbnailPath };
   }
 }
 
-async function recoverPublicMetadata(sourceUrl: string): Promise<PublicSocialMetadata | null> {
-  const userAgents = sourceUrl.includes('instagram.com')
+async function* recoverPublicMetadata(sourceUrl: string): AsyncGenerator<PublicSocialMetadata> {
+  const host = new URL(sourceUrl).hostname;
+  const userAgents = (host === 'instagram.com' || host === 'www.instagram.com')
     ? [
         'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
-        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36',
+        BROWSER_USER_AGENT,
       ]
     : [
-        'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/126 Mobile Safari/537.36',
+        BROWSER_USER_AGENT,
         'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
       ];
 
-  let best: PublicSocialMetadata = { caption: null, thumbnailUrl: null };
   for (const userAgent of userAgents) {
     const fetched = await fetchPublicResource(
       sourceUrl,
       { Accept: 'text/html,application/xhtml+xml', 'User-Agent': userAgent },
       MAX_HTML_BYTES,
+      true,
     ).catch(() => null);
     if (!fetched || !fetched.contentType.toLowerCase().includes('text/html')) continue;
 
-    const metadata = extractPublicMetadata(fetched.body.toString('utf8'), fetched.finalUrl);
-    best = {
-      caption: chooseLonger(best.caption, metadata.caption),
-      thumbnailUrl: best.thumbnailUrl ?? metadata.thumbnailUrl,
-    };
-    if (best.caption && best.thumbnailUrl) break;
+    // The next representation is tried if its first preview image failed,
+    // rather than treating the existence of an image URL as success.
+    yield extractPublicMetadata(fetched.body.toString('utf8'), fetched.finalUrl);
   }
-  return best.caption || best.thumbnailUrl ? best : null;
 }
 
-async function downloadPublicThumbnail(thumbnailUrl: string): Promise<string | null> {
+async function downloadPublicThumbnail(thumbnailUrl: string, sourceUrl: string): Promise<string | null> {
   const fetched = await fetchPublicResource(
     thumbnailUrl,
     {
       Accept: 'image/avif,image/webp,image/apng,image/jpeg,image/png,image/*',
-      'User-Agent': 'CookSense-LinkPreview/1.0',
+      'User-Agent': BROWSER_USER_AGENT,
+      Referer: `${new URL(sourceUrl).origin}/`,
     },
     MAX_THUMBNAIL_BYTES,
   );
-  if (!fetched.contentType.toLowerCase().startsWith('image/')) return null;
-
-  const extension = imageExtension(fetched.contentType);
-  const localPath = path.join(os.tmpdir(), `cooksense-thumbnail-${randomUUID()}${extension}`);
-  await fs.writeFile(localPath, fetched.body);
+  // Decode the actual bytes, not just the server's often-inaccurate MIME type.
+  // This also stops login HTML, video URLs and tracking pixels being saved as
+  // dish photos, and ensures the vision API really receives JPEG bytes.
+  const image = sharp(fetched.body, { limitInputPixels: 40_000_000 });
+  const metadata = await image.metadata();
+  if (!['jpeg', 'png', 'webp', 'heif', 'avif', 'gif'].includes(metadata.format ?? '') ||
+      (metadata.width ?? 0) < 80 || (metadata.height ?? 0) < 80) return null;
+  const jpeg = await image.rotate()
+    .resize({ width: 1200, height: 1200, fit: 'inside', withoutEnlargement: true })
+    .jpeg({ quality: 86 }).toBuffer();
+  const localPath = path.join(os.tmpdir(), `cooksense-thumbnail-${randomUUID()}.jpg`);
+  await fs.writeFile(localPath, jpeg);
   return localPath;
 }
 
@@ -105,6 +124,7 @@ async function fetchPublicResource(
   rawUrl: string,
   headers: Record<string, string>,
   maxBytes: number,
+  allowHtmlPrefix = false,
 ): Promise<{ body: Buffer; contentType: string; finalUrl: string }> {
   let current = new URL(rawUrl);
   const controller = new AbortController();
@@ -129,6 +149,7 @@ async function fetchPublicResource(
       });
 
       if (REDIRECT_STATUSES.has(response.status)) {
+        await response.body?.cancel().catch(() => undefined);
         if (redirects === FETCH_SAFETY.maxRedirects) {
           throw new ImportError('SOURCE_NOT_ACCESSIBLE', true, 'Too many source redirects');
         }
@@ -139,6 +160,7 @@ async function fetchPublicResource(
       }
 
       if (!response.ok || !response.body) {
+        await response.body?.cancel().catch(() => undefined);
         throw new ImportError(
           'SOURCE_NOT_ACCESSIBLE',
           response.status >= 500 || response.status === 429,
@@ -147,7 +169,10 @@ async function fetchPublicResource(
       }
 
       const declaredSize = Number.parseInt(response.headers.get('content-length') ?? '0', 10);
-      if (declaredSize > maxBytes) throw new ImportError('FILE_TOO_LARGE');
+      if (declaredSize > maxBytes && !allowHtmlPrefix) {
+        await response.body.cancel().catch(() => undefined);
+        throw new ImportError('FILE_TOO_LARGE');
+      }
 
       const chunks: Buffer[] = [];
       let received = 0;
@@ -155,12 +180,22 @@ async function fetchPublicResource(
       let nextChunk = await reader.read();
       while (!nextChunk.done) {
         const { value } = nextChunk;
-        received += value.byteLength;
-        if (received > maxBytes) {
+        const remaining = maxBytes - received;
+        if (value.byteLength > remaining) {
           await reader.cancel().catch(() => undefined);
-          throw new ImportError('FILE_TOO_LARGE');
+          if (!allowHtmlPrefix) throw new ImportError('FILE_TOO_LARGE');
+          // Social pages can contain megabytes of scripts after the useful
+          // head metadata. Read a bounded prefix instead of discarding valid
+          // previews just because the rest of the document is large.
+          chunks.push(Buffer.from(value.subarray(0, remaining)));
+          break;
         }
+        received += value.byteLength;
         chunks.push(Buffer.from(value));
+        if (allowHtmlPrefix && received === maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          break;
+        }
         nextChunk = await reader.read();
       }
       return {
@@ -196,6 +231,12 @@ export function extractPublicMetadata(html: string, baseUrl?: string): PublicSoc
     }
   }
 
+  for (const tag of html.match(/<(?:video|link)\b[^>]*>/gi) ?? []) {
+    const attrs = parseHtmlAttributes(tag);
+    const candidate = attrs.poster ?? (attrs.rel?.toLowerCase() === 'image_src' ? attrs.href : null);
+    if (candidate) thumbnailCandidates.push(decodeHtmlEntities(candidate));
+  }
+
   for (const scriptMatch of html.matchAll(
     /<script\b[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
   )) {
@@ -214,20 +255,20 @@ export function extractPublicMetadata(html: string, baseUrl?: string): PublicSoc
     ? null
     : cleanedCaptions.reduce((longest, value) => (value.length > longest.length ? value : longest));
 
-  let thumbnailUrl: string | null = null;
+  const thumbnailUrls: string[] = [];
   for (const candidate of thumbnailCandidates) {
     try {
       const parsed = baseUrl ? new URL(candidate, baseUrl) : new URL(candidate);
-      if (parsed.protocol === 'https:') {
-        thumbnailUrl = parsed.toString();
-        break;
+      if (parsed.protocol === 'https:' && !parsed.username && !parsed.password &&
+          (!parsed.port || parsed.port === '443') && !thumbnailUrls.includes(parsed.toString())) {
+        thumbnailUrls.push(parsed.toString());
       }
     } catch {
       // Ignore malformed image URLs and continue to the next candidate.
     }
   }
 
-  return { caption, thumbnailUrl };
+  return { caption, thumbnailUrl: thumbnailUrls[0] ?? null, thumbnailUrls };
 }
 
 /** Backwards-compatible helper used by focused extraction tests. */
@@ -264,22 +305,34 @@ function collectJsonLdMetadata(
   for (const key of ['description', 'caption', 'name', 'headline']) {
     if (typeof object[key] === 'string') captions.push(cleanSocialCaption(object[key]));
   }
-  for (const key of ['thumbnailUrl', 'contentUrl']) {
+  // VideoObject.contentUrl is the video, NOT its poster image. Only treat
+  // contentUrl as an image when JSON-LD explicitly describes an ImageObject.
+  const types = Array.isArray(object['@type']) ? object['@type'] : [object['@type']];
+  const imageKeys = types.includes('ImageObject') ? ['thumbnailUrl', 'contentUrl'] : ['thumbnailUrl'];
+  for (const key of imageKeys) {
     const candidate = object[key];
     if (typeof candidate === 'string') thumbnails.push(candidate);
     if (Array.isArray(candidate)) {
       for (const item of candidate) if (typeof item === 'string') thumbnails.push(item);
     }
   }
-  const image = object.image;
-  if (typeof image === 'string') thumbnails.push(image);
-  if (image && typeof image === 'object') {
-    const imageUrl = (image as Record<string, unknown>).url;
-    if (typeof imageUrl === 'string') thumbnails.push(imageUrl);
-  }
+  collectImageUrls(object.image, thumbnails);
 
   for (const child of Object.values(object)) {
     if (child && typeof child === 'object') collectJsonLdMetadata(child, captions, thumbnails, depth + 1);
+  }
+}
+
+function collectImageUrls(value: unknown, thumbnails: string[], depth = 0): void {
+  if (depth > 8) return;
+  if (typeof value === 'string') thumbnails.push(value);
+  else if (Array.isArray(value)) {
+    for (const item of value.slice(0, 50)) collectImageUrls(item, thumbnails, depth + 1);
+  } else if (value && typeof value === 'object') {
+    const image = value as Record<string, unknown>;
+    for (const key of ['url', 'contentUrl', '@id']) {
+      if (typeof image[key] === 'string') thumbnails.push(image[key]);
+    }
   }
 }
 
@@ -307,14 +360,6 @@ function chooseLonger(first: string | null, second: string | null): string | nul
   if (!first) return second;
   if (!second) return first;
   return second.length > first.length ? second : first;
-}
-
-function imageExtension(contentType: string): string {
-  const lower = contentType.toLowerCase();
-  if (lower.includes('png')) return '.png';
-  if (lower.includes('webp')) return '.webp';
-  if (lower.includes('avif')) return '.avif';
-  return '.jpg';
 }
 
 function decodeHtmlEntities(text: string): string {

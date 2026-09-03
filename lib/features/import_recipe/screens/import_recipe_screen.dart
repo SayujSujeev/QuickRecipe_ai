@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import '../../../core/services/recipe_import_error.dart';
 import '../../../core/services/recipe_import_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/kitchen_app_bar.dart';
@@ -47,12 +48,13 @@ class _ImportRecipeScreenState extends State<ImportRecipeScreen> {
   Future<void> _pasteFromClipboard() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     final text = data?.text?.trim();
-    if (text != null && text.isNotEmpty) {
+    if (mounted && text != null && text.isNotEmpty) {
       setState(() => _controller.text = text);
     }
   }
 
   Future<void> _startUrlImport() async {
+    if (_busy) return;
     final url = _controller.text.trim();
     if (url.isEmpty) {
       setState(() => _error = 'Paste a recipe video link first.');
@@ -72,7 +74,7 @@ class _ImportRecipeScreenState extends State<ImportRecipeScreen> {
         ),
       );
     } catch (e) {
-      if (mounted) setState(() => _error = 'Could not start import: $e');
+      if (mounted) setState(() => _error = recipeImportErrorMessage(e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -104,7 +106,7 @@ class _ImportRecipeScreenState extends State<ImportRecipeScreen> {
       );
     } catch (e) {
       if (mounted) {
-        setState(() => _error = 'Could not import the shared video: $e');
+        setState(() => _error = recipeImportErrorMessage(e));
       }
     } finally {
       if (mounted) setState(() => _busy = false);

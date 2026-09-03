@@ -62,6 +62,38 @@ describe('extractCaption', () => {
     expect(extractPublicMetadata(html, 'https://video.example.com/post/1')).toEqual({
       caption: '500g potatoes, chilli and garlic. Fry and toss in sauce.',
       thumbnailUrl: 'https://video.example.com/images/potatoes.jpg',
+      thumbnailUrls: ['https://video.example.com/images/potatoes.jpg'],
     });
+  });
+
+  it('retains alternative image candidates instead of only the first URL', () => {
+    const metadata = extractPublicMetadata(
+      '<meta property="og:image" content="https://cdn.example.com/expired.jpg">' +
+      '<meta name="twitter:image" content="https://cdn.example.com/dish.jpg">' +
+      '<meta property="og:image" content="https://cdn.example.com/dish.jpg">',
+    );
+    expect(metadata.thumbnailUrls).toEqual([
+      'https://cdn.example.com/expired.jpg', 'https://cdn.example.com/dish.jpg',
+    ]);
+  });
+
+  it('never mistakes a JSON-LD video contentUrl for its image', () => {
+    const html = `<script type="application/ld+json">${JSON.stringify({
+      '@type': 'VideoObject',
+      contentUrl: 'https://cdn.example.com/movie.mp4',
+      image: { '@type': 'ImageObject', contentUrl: 'https://cdn.example.com/dish.jpg' },
+    })}</script>`;
+    expect(extractPublicMetadata(html).thumbnailUrls).toEqual(['https://cdn.example.com/dish.jpg']);
+  });
+
+  it('supports video posters, image_src links and JSON-LD image arrays', () => {
+    const metadata = extractPublicMetadata(
+      '<video poster="/dish.jpg?a=1&amp;b=2"></video><link rel="image_src" href="/preview.jpg">' +
+      '<script type="application/ld+json">{"image":[{"url":"https://cdn.example.com/extra.jpg"}]}</script>',
+      'https://example.com/post',
+    );
+    expect(metadata.thumbnailUrls).toContain('https://example.com/dish.jpg?a=1&b=2');
+    expect(metadata.thumbnailUrls).toContain('https://example.com/preview.jpg');
+    expect(metadata.thumbnailUrls).toContain('https://cdn.example.com/extra.jpg');
   });
 });

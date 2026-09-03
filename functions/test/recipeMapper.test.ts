@@ -2,6 +2,15 @@ import { mapDraftToCanonicalRecipe } from '../src/domain/recipeMapper';
 import { fixtureCompleteDraft } from '../src/providers/mocks';
 
 describe('mapDraftToCanonicalRecipe', () => {
+  it('persists serving/time values and estimate labels into the cookbook', () => {
+    const draft = fixtureCompleteDraft();
+    draft.servings = { ...draft.servings!, isEstimated: true, estimateReason: 'Batch size.' };
+    draft.times = { ...draft.times, estimatedFields: ['prepMinutes'], estimateReason: 'Chopping.' };
+    const mapped = mapDraftToCanonicalRecipe(draft, null, 'https://cdn.example.com/dish.jpg');
+    expect(mapped.servings).toEqual(expect.objectContaining({ quantity: 2, isEstimated: true, estimateReason: 'Batch size.' }));
+    expect(mapped.times).toEqual(expect.objectContaining({ totalMinutes: 18, estimatedFields: ['prepMinutes'] }));
+    expect(mapped.imageUrl).toBe('https://cdn.example.com/dish.jpg');
+  });
   it('joins steps in order into instructions text', () => {
     const mapped = mapDraftToCanonicalRecipe(fixtureCompleteDraft(), 'https://www.instagram.com/reel/ABC/');
     expect(mapped.instructions).toBe(
