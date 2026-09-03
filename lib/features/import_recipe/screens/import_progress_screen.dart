@@ -48,7 +48,10 @@ class _ImportProgressScreenState extends State<ImportProgressScreen> {
       _navigatedAway = true;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => ImportErrorScreen(message: job.errorMessage),
+          builder: (_) => ImportErrorScreen(
+            message: job.errorMessage,
+            errorCode: job.errorCode,
+          ),
         ),
       );
     } else if (job.isCancelled) {
@@ -112,14 +115,13 @@ class _UploadRecoveryPanelState extends State<_UploadRecoveryPanel> {
       mimeTypes: ['video/mp4', 'video/quicktime', 'video/webm'],
       uniformTypeIdentifiers: ['public.movie'],
     );
-    final file = await openFile(acceptedTypeGroups: [videos]);
-    if (file == null || !mounted) return;
-
     setState(() {
       _uploading = true;
       _error = null;
     });
     try {
+      final file = await openFile(acceptedTypeGroups: [videos]);
+      if (file == null || !mounted) return;
       await RecipeImportService.instance.continueWithVideo(
         widget.job,
         file.path,
@@ -133,7 +135,7 @@ class _UploadRecoveryPanelState extends State<_UploadRecoveryPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -200,6 +202,25 @@ class _UploadRecoveryPanelState extends State<_UploadRecoveryPanel> {
           Text(
             'MP4, MOV, M4V or WebM • up to 150 MB',
             style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.textMuted),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: _uploading
+                ? null
+                : () async {
+                    try {
+                      await RecipeImportService.instance.cancel(
+                        widget.job.jobId,
+                      );
+                    } catch (error) {
+                      if (mounted) {
+                        setState(
+                          () => _error = recipeImportErrorMessage(error),
+                        );
+                      }
+                    }
+                  },
+            child: const Text('Cancel Import'),
           ),
         ],
       ),

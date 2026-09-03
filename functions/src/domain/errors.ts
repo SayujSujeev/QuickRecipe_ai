@@ -25,7 +25,7 @@ export type ImportErrorCode =
 const USER_MESSAGES: Record<ImportErrorCode, string> = {
   SOURCE_URL_INVALID: 'That link doesn’t look like a supported recipe video URL.',
   SOURCE_NOT_ACCESSIBLE:
-    'This link does not expose enough recipe detail. Share or choose the video file to continue.',
+    'We could not get enough recipe detail from this link. Public videos can also return a login page or an incomplete preview. Share or choose the video file to continue.',
   UPLOAD_REQUIRED: 'Please upload the video to continue importing this recipe.',
   FILE_TOO_LARGE: 'That video file is too large to import.',
   VIDEO_TOO_LONG: 'That video is longer than the current import limit.',

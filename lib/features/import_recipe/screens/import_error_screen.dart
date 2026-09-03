@@ -6,11 +6,12 @@ import '../../../core/widgets/kitchen_app_bar.dart';
 import '../../recipes/screens/recipe_editor_screen.dart';
 
 class ImportErrorScreen extends StatelessWidget {
-  const ImportErrorScreen({super.key, this.message});
+  const ImportErrorScreen({super.key, this.message, this.errorCode});
 
   /// User-safe error message from the backend (see functions ImportError
   /// codes). Falls back to generic copy when absent.
   final String? message;
+  final String? errorCode;
 
   @override
   Widget build(BuildContext context) {
@@ -111,19 +112,20 @@ class ImportErrorScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            const _IssueCard(
-              icon: Icons.lock_outline,
-              title: 'Private or restricted video',
-              body:
-                  'Private accounts and restricted reels don\'t share their recipe text publicly.',
-            ),
-            const SizedBox(height: 12),
-            const _IssueCard(
-              icon: Icons.subject_rounded,
-              title: 'No recipe in the caption',
-              body:
-                  'Some creators put the recipe only in the video itself, not the caption.',
-            ),
+            if (errorCode == 'SOURCE_NOT_ACCESSIBLE')
+              const _IssueCard(
+                icon: Icons.link_off_rounded,
+                title: 'The link preview was unavailable',
+                body:
+                    'Public posts can also return login pages or incomplete previews. This does not mean the video is private.',
+              )
+            else if (errorCode == 'NOT_A_RECIPE')
+              const _IssueCard(
+                icon: Icons.video_file_outlined,
+                title: 'Try a source with recipe details',
+                body:
+                    'Choose a video or caption that includes ingredients and preparation steps, or add the recipe manually.',
+              ),
             const SizedBox(height: 28),
             SizedBox(
               width: double.infinity,

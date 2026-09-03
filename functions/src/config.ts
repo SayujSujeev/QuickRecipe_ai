@@ -49,6 +49,6 @@ export const config = {
     unknownQuantityReviewRatio: 0.25,
   },
   schemaVersion: '1.1.0',
-  promptVersion: '1.1.0',
+  promptVersion: '1.1.1',
   preprocessingVersion: '1.0.0',
 } as const;

@@ -144,6 +144,30 @@ function makeDeps(overrides: Partial<PipelineDeps> = {}) {
 }
 
 describe('runImportPipeline (happy path)', () => {
+  it('does not replace the resolved recipe with a stale login caption', async () => {
+    const analyze = jest.fn().mockResolvedValue({ draft: fixtureCompleteDraft(), model: 'test', requestId: null, usage: null });
+    const { deps, repo } = makeDeps({
+      sourceResolver: new MockMediaSourceResolver({ kind: 'caption',
+        caption: 'Roast 500g potatoes with 1 tbsp oil for 30 minutes.', localThumbnailPath: null }),
+      analysis: { analyze },
+    });
+    await repo.create(baseJob({ sourceType: 'instagram_url', uploadStoragePath: null,
+      caption: 'Welcome back to Instagram. Sign in to see more.' }));
+    await runImportPipeline('job_1', deps);
+    expect(analyze.mock.calls[0]![0].caption).toBe('Roast 500g potatoes with 1 tbsp oil for 30 minutes.');
+    expect((await repo.get('job_1'))!.sourceEvidence).toMatchObject({ kind: 'public_preview', imageCount: 0 });
+  });
+
+  it('offers video recovery if public metadata is classified as not_a_recipe', async () => {
+    const { deps, repo, persistedDrafts } = makeDeps({
+      sourceResolver: new MockMediaSourceResolver({ kind: 'caption', caption: 'Watch my latest reel!', localThumbnailPath: null }),
+      analysis: new MockRecipeAnalysisProvider(fixtureCompleteDraft({ status: 'not_a_recipe' })),
+    });
+    await repo.create(baseJob({ sourceType: 'instagram_url', uploadStoragePath: null, caption: null }));
+    await runImportPipeline('job_1', deps);
+    expect((await repo.get('job_1'))!).toMatchObject({ state: 'awaiting_user_upload', errorCode: 'SOURCE_NOT_ACCESSIBLE' });
+    expect(persistedDrafts).toHaveLength(0);
+  });
   it('retries thumbnail persistence once and saves the recovered URL with the draft', async () => {
     const { deps, repo, mediaStore, persistedDrafts } = makeDeps();
     const persist = jest.spyOn(mediaStore, 'persistThumbnail')

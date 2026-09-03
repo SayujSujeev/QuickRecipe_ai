@@ -36,10 +36,13 @@ export class FirestoreImportJobRepository implements ImportJobRepository {
     const snap = await this.col()
       .where('userId', '==', userId)
       .where('sourceUrlHash', '==', sourceUrlHash)
-      .limit(1)
       .get();
     if (snap.empty) return null;
-    return snap.docs[0]!.data() as RecipeImportJob;
+    // Old failures for the same link must not hide a resumable active job.
+    // Select in memory to avoid requiring a new Firestore compound index.
+    const jobs = snap.docs.map((doc) => doc.data() as RecipeImportJob)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    return jobs.find((job) => !isTerminal(job.state)) ?? jobs[0] ?? null;
   }
 
   async update(jobId: string, patch: Partial<RecipeImportJob>): Promise<void> {

@@ -7,6 +7,7 @@ import type { MediaSourceResolver, ResolvedSource, TemporaryMediaStore } from '.
 import type { RecipeImportJob } from '../domain/importJob';
 import { ImportError } from '../domain/errors';
 import { assertPublicHost, FETCH_SAFETY } from '../security/urlSafety';
+import { isPreviewBoilerplate, usablePreviewCaption } from '../domain/publicPreview';
 
 const MIN_USEFUL_CAPTION_CHARS = 8;
 const MAX_HTML_BYTES = 600_000;
@@ -45,12 +46,21 @@ export class DefaultMediaSourceResolver implements MediaSourceResolver {
     if (job.sourceType === 'uploaded_video') throw new ImportError('UPLOAD_REQUIRED');
     if (!job.sourceUrl) throw new ImportError('SOURCE_URL_INVALID');
 
-    let caption = '';
+    let caption = usablePreviewCaption(job.clientPreview?.caption) ?? '';
     let localThumbnailPath: string | null = null;
     const attempted = new Set<string>();
-    for await (const metadata of recoverPublicMetadata(job.sourceUrl)) {
+    // The phone may receive a public preview where the cloud receives a login
+    // page. Validate its image bytes/redirects with the same server-side limits.
+    async function* candidates(): AsyncGenerator<PublicSocialMetadata> {
+      if (caption) {
+        const urls = job.clientPreview?.thumbnailUrls ?? [];
+        yield { caption, thumbnailUrl: urls[0] ?? null, thumbnailUrls: urls };
+      }
+      yield* recoverPublicMetadata(job.sourceUrl!);
+    }
+    for await (const metadata of candidates()) {
       caption = chooseLonger(caption, metadata.caption)?.trim() ?? '';
-      if (!localThumbnailPath) {
+      if (metadata.caption && !localThumbnailPath) {
         for (const candidate of metadata.thumbnailUrls) {
           if (attempted.has(candidate) || attempted.size >= MAX_THUMBNAIL_ATTEMPTS) continue;
           attempted.add(candidate);
@@ -91,7 +101,11 @@ async function* recoverPublicMetadata(sourceUrl: string): AsyncGenerator<PublicS
 
     // The next representation is tried if its first preview image failed,
     // rather than treating the existence of an image URL as success.
-    yield extractPublicMetadata(fetched.body.toString('utf8'), fetched.finalUrl);
+    try {
+      yield extractPublicMetadata(fetched.body.toString('utf8'), fetched.finalUrl);
+    } catch {
+      // A malformed representation must not disable the alternate preview.
+    }
   }
 }
 
@@ -214,6 +228,11 @@ async function fetchPublicResource(
  * standard meta tags, and JSON-LD. Attribute order and quote style are both
  * intentionally ignored because real social pages vary them frequently. */
 export function extractPublicMetadata(html: string, baseUrl?: string): PublicSocialMetadata {
+  // A redirect to a sign-in/checkpoint page is not the requested post, even
+  // when its localized metadata or site logo looks like a valid preview.
+  if (baseUrl && /\/(?:accounts\/login|login|challenge|checkpoint|consent)(?:\/|$)/i.test(new URL(baseUrl).pathname)) {
+    return { caption: null, thumbnailUrl: null, thumbnailUrls: [] };
+  }
   const captionCandidates: string[] = [];
   const thumbnailCandidates: string[] = [];
 
@@ -250,12 +269,15 @@ export function extractPublicMetadata(html: string, baseUrl?: string): PublicSoc
 
   const cleanedCaptions = captionCandidates
     .map((value) => value.trim())
-    .filter((value) => value.length > 0 && !isBoilerplate(value));
+    .filter((value) => value.length > 0 && !isPreviewBoilerplate(value));
   const caption = cleanedCaptions.length === 0
     ? null
-    : cleanedCaptions.reduce((longest, value) => (value.length > longest.length ? value : longest));
+    : cleanedCaptions.reduce((longest, value) => (value.length > longest.length ? value : longest)).slice(0, 5000);
 
   const thumbnailUrls: string[] = [];
+  if (!caption && captionCandidates.some(isPreviewBoilerplate)) {
+    return { caption: null, thumbnailUrl: null, thumbnailUrls };
+  }
   for (const candidate of thumbnailCandidates) {
     try {
       const parsed = baseUrl ? new URL(candidate, baseUrl) : new URL(candidate);
@@ -344,18 +366,6 @@ function cleanSocialCaption(text: string): string {
     .trim();
 }
 
-function isBoilerplate(text: string): boolean {
-  const normalized = text.toLowerCase().replace(/\s+/g, ' ').trim();
-  return [
-    'instagram',
-    'tiktok',
-    'youtube',
-    'facebook',
-    'tiktok - make your day',
-    'log in or sign up to view',
-  ].includes(normalized);
-}
-
 function chooseLonger(first: string | null, second: string | null): string | null {
   if (!first) return second;
   if (!second) return first;
@@ -363,9 +373,11 @@ function chooseLonger(first: string | null, second: string | null): string | nul
 }
 
 function decodeHtmlEntities(text: string): string {
+  const codePoint = (value: number): string => Number.isInteger(value) && value > 0 &&
+    value <= 0x10ffff && (value < 0xd800 || value > 0xdfff) ? String.fromCodePoint(value) : '\uFFFD';
   return text
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#(\d+);/g, (_, code: string) => codePoint(Number.parseInt(code, 10)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code: string) => codePoint(Number.parseInt(code, 16)))
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
     .replace(/&gt;/gi, '>')

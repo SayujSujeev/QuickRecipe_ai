@@ -9,6 +9,7 @@ import { FirestoreImportJobRepository } from '../providers/firestoreJobRepositor
 import { canonicalizeSourceUrl, hashCanonicalUrl } from '../security/urlSafety';
 import { requireUid, toHttpsError } from './httpsCallableHelpers';
 import { createImportInputSchema } from './schemas';
+import { usablePreviewCaption } from '../domain/publicPreview';
 
 const repo = new FirestoreImportJobRepository(db);
 
@@ -19,6 +20,10 @@ export const createImport = onCall({ region: 'us-central1' }, async (request) =>
     throw new HttpsError('invalid-argument', 'Invalid import request.', parsed.error.flatten());
   }
   const input = parsed.data;
+  const previewCaption = usablePreviewCaption(input.clientPreview?.caption);
+  const clientPreview = previewCaption
+    ? { caption: previewCaption, thumbnailUrls: input.clientPreview!.thumbnailUrls }
+    : null;
 
   try {
     // Idempotency: replaying the same client-generated key returns the
@@ -43,18 +48,21 @@ export const createImport = onCall({ region: 'us-central1' }, async (request) =>
         // that will never progress.
         const staleQueued =
           duplicate.state === 'queued' && Date.now() - duplicate.updatedAt > 2 * 60 * 1000;
-        // Jobs parked in `awaiting_user_upload` are legacy leftovers from
-        // the removed upload-fallback flow — push them back through the
-        // caption-based pipeline instead of surfacing their stale error.
-        const legacyAwaitingUpload = duplicate.state === 'awaiting_user_upload';
-        if (staleQueued || legacyAwaitingUpload) {
-          await repo.update(duplicate.jobId, {
+        // Re-sharing a blocked link must not loop through the same cloud login
+        // page. Only new public evidence from the device can resume this way.
+        const newPreview = duplicate.state === 'awaiting_user_upload' && clientPreview &&
+          clientPreview.caption !== duplicate.clientPreview?.caption;
+        if (staleQueued || newPreview) {
+          const patch: Partial<RecipeImportJob> = {
             state: 'queued',
             progressPercent: STATE_PROGRESS.queued,
             requeuedAt: Date.now(),
             errorCode: null,
             errorMessage: null,
-          });
+            ...(newPreview ? { clientPreview } : {}),
+          };
+          await repo.update(duplicate.jobId, patch);
+          return { job: { ...duplicate, ...patch } };
         }
         return { job: duplicate };
       }
@@ -76,6 +84,7 @@ export const createImport = onCall({ region: 'us-central1' }, async (request) =>
       sourceUrl,
       sourceUrlHash,
       caption: input.caption ?? null,
+      clientPreview,
       uploadStoragePath: input.sourceType === 'uploaded_video' ? `recipeImports/${uid}/${jobId}/source` : null,
       targetLanguage: input.targetLanguage,
       measurementSystem: input.measurementSystem,

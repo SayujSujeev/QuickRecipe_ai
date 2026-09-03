@@ -62,7 +62,10 @@ Preserve original ingredient meaning. Normalize structure and units only when
 the conversion is mathematically supported. Do not convert vague measures such
 as "some", "as needed", "one packet", or "one handful" into invented numbers.
 
-Return status not_a_recipe when the evidence does not describe a recipe.
+Use all supplied evidence. A missing transcript does not invalidate a recipe
+in the caption. A public thumbnail is only a still image, not proof that the
+video has been watched. Never infer missing recipe steps from a dish photo.
+Return status not_a_recipe when the supplied evidence does not describe a recipe.
 Return needs_review when key information is missing or contradictory.
 Provide evidence references and confidence values for extracted facts.`;
 
@@ -77,7 +80,7 @@ export class OpenAiRecipeAnalysisProvider implements RecipeAnalysisProvider {
           `Target output language: ${input.targetLanguage}`,
           `Measurement system: ${input.measurementSystem}`,
           `Caption:\n${input.caption ?? '(none provided)'}`,
-          `Transcript:\n${input.transcript || '(no speech detected; use visual evidence only)'}`,
+          `Transcript:\n${input.transcript || '(not available; use the supplied caption and images, if any)'}`,
           input.correctivePrompt ? `Correction request: ${input.correctivePrompt}` : '',
         ]
           .filter(Boolean)

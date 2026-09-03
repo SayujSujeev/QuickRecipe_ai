@@ -32,7 +32,7 @@ const TRANSITIONS: Record<ImportJobState, ImportJobState[]> = {
   preprocessing: ['transcribing', 'failed_retryable', 'failed_terminal', 'cancelled'],
   transcribing: ['analyzing', 'failed_retryable', 'failed_terminal', 'cancelled'],
   analyzing: ['validating', 'failed_retryable', 'failed_terminal', 'cancelled'],
-  validating: ['needs_review', 'completed', 'failed_retryable', 'failed_terminal', 'cancelled'],
+  validating: ['needs_review', 'completed', 'awaiting_user_upload', 'failed_retryable', 'failed_terminal', 'cancelled'],
   needs_review: ['completed', 'cancelled'],
   completed: [],
   failed_retryable: ['queued', 'acquiring_source', 'preprocessing', 'failed_terminal', 'cancelled'],

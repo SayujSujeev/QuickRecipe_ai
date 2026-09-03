@@ -26,6 +26,7 @@ describe('import job state machine', () => {
   });
 
   it('allows the upload-fallback branch', () => {
+    expect(canTransition('validating', 'awaiting_user_upload')).toBe(true);
     expect(canTransition('acquiring_source', 'awaiting_user_upload')).toBe(true);
     expect(canTransition('awaiting_user_upload', 'preprocessing')).toBe(true);
     // After the fallback upload, processImport re-queues the job for the worker.

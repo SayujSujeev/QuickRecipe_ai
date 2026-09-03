@@ -3,8 +3,20 @@ import {
   extractPublicMetadata,
   extractThumbnailUrl,
 } from '../src/providers/mediaSourceResolver';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+const previews = JSON.parse(readFileSync(
+  resolve(__dirname, '../../test/fixtures/public_social_previews.json'), 'utf8',
+)) as Array<{ description: string; html: string; url: string; caption: string | null; thumbnailUrl?: string }>;
 
 describe('extractCaption', () => {
+  it.each(previews)('$description', (fixture) => {
+    const result = extractPublicMetadata(fixture.html, fixture.url);
+    expect(result.caption).toBe(fixture.caption);
+    if (fixture.thumbnailUrl) expect(result.thumbnailUrl).toBe(fixture.thumbnailUrl);
+    if (!fixture.caption) expect(result.thumbnailUrls).toEqual([]);
+  });
   it('extracts og:description with property-first attribute order', () => {
     const html = '<head><meta property="og:description" content="1kg chicken, marinate 30 min" /></head>';
     expect(extractCaption(html)).toBe('1kg chicken, marinate 30 min');

@@ -1,0 +1,27 @@
+[
+  {
+    "description": "exact login caption recorded by the production worker on 2026-09-03",
+    "url": "https://www.instagram.com/reel/DTQOpCMAM4U/",
+    "html": "<meta name=\"description\" content=\"Welcome back to Instagram. Sign in to check out what your friends, family &amp; interests have been capturing &amp; sharing around the world.\"><meta property=\"og:title\" content=\"Instagram\"><meta property=\"og:image\" content=\"https://cdn.example.com/instagram-logo.png\">",
+    "caption": null
+  },
+  {
+    "description": "real post metadata alongside longer generic login copy",
+    "url": "https://www.instagram.com/reel/example/",
+    "html": "<meta name=\"description\" content=\"Welcome back to Instagram. Sign in to check out what your friends, family &amp; interests have been capturing &amp; sharing around the world.\"><meta property=\"og:title\" content=\"Chef on Instagram: &quot;Roast 500g potatoes with 1 tbsp oil for 30 minutes.&quot;\"><meta content=\"https://cdn.example.com/potatoes.jpg?a=1&amp;b=2\" property=\"og:image\">",
+    "caption": "Roast 500g potatoes with 1 tbsp oil for 30 minutes.",
+    "thumbnailUrl": "https://cdn.example.com/potatoes.jpg?a=1&b=2"
+  },
+  {
+    "description": "localized sign-in redirect is never a post",
+    "url": "https://www.instagram.com/accounts/login/?next=/reel/example/",
+    "html": "<meta name=\"description\" content=\"Melde dich an, um Fotos und Videos von deinen Freunden zu sehen.\">",
+    "caption": null
+  },
+  {
+    "description": "do not mistake login words inside an actual recipe for a blocked page",
+    "url": "https://www.instagram.com/reel/example/",
+    "html": "<meta property='og:description' content='Roast 500g potatoes with oil. Sign in to see more recipes.'>",
+    "caption": "Roast 500g potatoes with oil. Sign in to see more recipes."
+  }
+]

@@ -2,6 +2,7 @@ import type { ImportErrorCode } from './errors';
 import type { ImportJobState } from './importJobState';
 import type { RecipeDraft } from './recipeSchema';
 import type { SourceType } from '../security/urlSafety';
+import type { ClientPublicPreview } from './publicPreview';
 
 export interface FrameManifestEntry {
   index: number;
@@ -40,6 +41,8 @@ export interface RecipeImportJob {
   sourceUrl: string | null;
   sourceUrlHash: string | null;
   caption: string | null;
+  clientPreview?: ClientPublicPreview | null;
+  sourceEvidence?: { kind: 'video' | 'public_preview' | 'caption'; captionChars: number; imageCount: number };
   uploadStoragePath: string | null;
 
   targetLanguage: string;

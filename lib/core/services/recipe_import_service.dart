@@ -9,11 +9,12 @@ import 'package:uuid/uuid.dart';
 import '../../data/models/recipe_import_job.dart';
 import 'recipe_import_error.dart';
 import 'recipe_import_request.dart';
+import 'public_social_preview.dart';
 
-/// Client for the recipe-reel import pipeline. All fetching and AI work
-/// happens server-side (Cloud Functions); this service only creates jobs
-/// and reads job/draft state back from Firestore. No AI provider secrets
-/// ever touch the client.
+/// Client for the recipe-reel import pipeline. The phone can contribute an
+/// unauthenticated public link preview when the platform blocks cloud fetches.
+/// Image validation and all AI processing remain server-side; provider secrets
+/// never touch the client.
 class RecipeImportService {
   RecipeImportService._();
   static final RecipeImportService instance = RecipeImportService._();
@@ -36,6 +37,10 @@ class RecipeImportService {
       targetLanguage: targetLanguage,
       measurementSystem: measurementSystem,
     );
+    final preview = await PublicSocialPreview.fetch(
+      request['sourceUrl'] as String,
+    );
+    if (preview != null) request['clientPreview'] = preview.toMap();
     final result = await _functions
         .httpsCallable('createImport')
         .call<Map<String, dynamic>>(request);

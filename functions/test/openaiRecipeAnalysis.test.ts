@@ -26,6 +26,10 @@ it('requests labeled planning estimates using the strict schema and preserves re
     expect(request.instructions).toContain('Video runtime is\nNOT cooking time');
     expect(request.instructions).toContain('Keep source-provided numbers unchanged');
     expect(request.text.format.strict).toBe(true);
+    const evidence = request.input[0].content[0].text;
+    expect(evidence).toContain('use the supplied caption and images');
+    expect(evidence).not.toContain('use visual evidence only');
+    expect(evidence).not.toContain('no speech detected');
     expect(request.text.format.schema.properties.times.required).toContain('estimatedFields');
     expect(request.text.format.schema.properties.servings.anyOf[0].required).toContain('isEstimated');
   } finally {

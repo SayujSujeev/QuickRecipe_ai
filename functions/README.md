@@ -76,6 +76,28 @@ reported Instagram link and native share-sheet text.
 
 ### Link thumbnails and planning estimates (schema 1.1)
 
+- The app first attempts a bounded, unauthenticated public preview on the
+  device (8-second total deadline, 600 KB HTML prefix, known social hosts only).
+  It sends an optional `clientPreview` caption and at most four image URLs to
+  `createImport`. This helps when Instagram serves a public preview to the
+  phone but a login page to the Cloud Functions IP. No platform cookies,
+  credentials, proxy services or protected-video downloads are used.
+- Both sides reject sign-in boilerplate and login redirects. The backend
+  validates supplied images using the same DNS/redirect/byte/decode safeguards
+  as server-fetched images. Public-preview evidence that the AI cannot turn
+  into a recipe leads to `awaiting_user_upload`, not a claim that the actual
+  video is not a recipe. A real video upload can still be classified as such.
+- The September 3 production failure was a login description misclassified
+  as a recipe caption. `test/fixtures/public_social_previews.json` contains
+  that exact response text as a shared mobile/backend regression fixture.
+  `sourceEvidence` records the evidence kind and counts without logging its
+  content. The `tool/inspect_public_preview.dart` script checks the mobile
+  preview route without creating jobs or calling AI.
+- This recovery needs **both the new APK and updated functions**. It cannot
+  guarantee every public link: a platform can withhold its preview from both
+  routes, and a caption/thumbnail is not equivalent to the full video. In that
+  case, share or choose the video file. Existing failed jobs are not rewritten.
+
 - Link imports try multiple OpenGraph/Twitter/JSON-LD images, video posters and
   `image_src` links, then the alternate public page representation if needed.
   Large social pages use a bounded 600 KB HTML prefix so valid head metadata

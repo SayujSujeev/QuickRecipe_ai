@@ -6,6 +6,10 @@ export const createImportInputSchema = z.object({
   // and validation intentionally happen in canonicalizeSourceUrl.
   sourceUrl: z.string().min(1).max(6000).nullable().optional(),
   caption: z.string().max(5000).nullable().optional(),
+  clientPreview: z.object({
+    caption: z.string().min(8).max(5000),
+    thumbnailUrls: z.array(z.string().url().max(4096)).max(4).default([]),
+  }).nullable().optional(),
   targetLanguage: z.string().min(2).max(10).default('en'),
   measurementSystem: z.enum(['metric', 'imperial']).default('metric'),
   idempotencyKey: z.string().min(8).max(128),

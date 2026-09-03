@@ -18,6 +18,7 @@ import type {
 } from '../providers/types';
 import { selectFrameSubset } from './frameSelection';
 import { cleanupLocalFile } from '../providers/storageMediaStore';
+import { usablePreviewCaption } from '../domain/publicPreview';
 
 export interface PipelineDeps {
   repo: ImportJobRepository;
@@ -120,7 +121,12 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
       // Public social metadata has no video to transcribe. If a public poster
       // image is available, also give it to vision and retain it as the dish
       // thumbnail after the temporary evidence is removed.
-      const caption = job.caption?.trim() ? job.caption : resolved.caption;
+      // The resolver's recovered caption must not be replaced by stale login
+      // text or share-sheet prose saved on a previous attempt.
+      const supplied = usablePreviewCaption(job.caption);
+      const caption = supplied && supplied !== resolved.caption && job.sourceType !== 'caption_only'
+        ? `${resolved.caption}\n\nAdditional user-supplied context:\n${supplied}`
+        : resolved.caption;
       thumbnailLocalPath = resolved.localThumbnailPath;
       if (resolved.localThumbnailPath) {
         frames = [{
@@ -136,6 +142,14 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
     }
 
     job = await transitionTo(deps, job, 'analyzing', 'analyzingAt');
+    const sourceEvidence = {
+      kind: resolved.kind === 'video' ? 'video' as const
+        : job.sourceType === 'caption_only' ? 'caption' as const : 'public_preview' as const,
+      captionChars: job.caption?.length ?? 0,
+      imageCount: frames.length,
+    };
+    await repo.update(job.jobId, { sourceEvidence, promptVersion: config.promptVersion });
+    console.info('Recipe import evidence ready', { jobId: job.jobId, ...sourceEvidence });
     let analysis = await deps.analysis.analyze({
       caption: job.caption,
       transcript: transcriptText,
@@ -175,7 +189,18 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
     });
 
     if (draft.status === 'not_a_recipe') {
-      await repo.update(job.jobId, { errorCode: 'NOT_A_RECIPE' });
+      // A preview is not the video. An uninformative caption must not cause a
+      // terminal claim about a video we never analyzed.
+      if (sourceEvidence.kind === 'public_preview') {
+        console.info('Recipe import needs full video evidence', { jobId: job.jobId, ...sourceEvidence });
+        await repo.update(job.jobId, {
+          errorCode: 'SOURCE_NOT_ACCESSIBLE',
+          errorMessage: 'The link preview does not contain enough recipe information. Share or choose the video file so we can read its audio and on-screen steps.',
+        });
+        job = await transitionTo(deps, job, 'awaiting_user_upload');
+        await deps.mediaStore.deleteAll(job.jobId);
+        return;
+      }
       await repo.update(job.jobId, {
         errorCode: 'NOT_A_RECIPE',
         errorMessage: 'The source does not appear to describe a recipe.',
@@ -233,6 +258,7 @@ export async function runImportPipeline(jobId: string, deps: PipelineDeps): Prom
         current.state === 'acquiring_source' &&
         (current.sourceType === 'social_url' || current.sourceType === 'instagram_url');
       if (canRecoverWithVideo) {
+        console.info('Recipe import public preview unavailable', { jobId, errorCode: importError.code });
         await repo.update(jobId, {
           state: 'awaiting_user_upload',
           progressPercent: PROGRESS.awaiting_user_upload,

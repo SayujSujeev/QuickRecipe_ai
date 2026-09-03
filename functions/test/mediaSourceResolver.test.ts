@@ -4,6 +4,15 @@ import { DefaultMediaSourceResolver } from '../src/providers/mediaSourceResolver
 import type { RecipeImportJob } from '../src/domain/importJob';
 import type { TemporaryMediaStore } from '../src/providers/types';
 import { assertPublicHost } from '../src/security/urlSafety';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+const previews = JSON.parse(readFileSync(
+  resolve(__dirname, '../../test/fixtures/public_social_previews.json'), 'utf8',
+)) as Array<{ html: string }>;
+function loginPage(): Response {
+  return new Response(previews[0]!.html, { headers: { 'content-type': 'text/html' } });
+}
 
 jest.mock('../src/security/urlSafety', () => ({
   ...jest.requireActual('../src/security/urlSafety'),
@@ -115,4 +124,49 @@ it('bounds image attempts and does not retry the same expired candidate', async 
     String(url) === sourceUrl ? html(images) : new Response('Expired', { status: 403 }));
   expect(await resolveImage()).toBeNull();
   expect(globalThis.fetch).toHaveBeenCalledTimes(6); // two pages + four image attempts
+});
+
+it('rejects the exact production login page before analyzing or downloading its logo', async () => {
+  jest.spyOn(globalThis, 'fetch').mockImplementation(async () => loginPage());
+  await expect(resolver.resolve(job)).rejects.toMatchObject({ code: 'SOURCE_NOT_ACCESSIBLE' });
+  expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+  expect(jest.mocked(fetch).mock.calls.every(([url]) => String(url) === sourceUrl)).toBe(true);
+});
+
+it('tries the alternate representation after a login page, keeping the real dish image', async () => {
+  jest.spyOn(globalThis, 'fetch')
+    .mockResolvedValueOnce(loginPage())
+    .mockResolvedValueOnce(html(['https://cdn.example.com/dish.jpg']))
+    .mockResolvedValueOnce(new Response(new Uint8Array(png)));
+  expect(await resolveImage()).not.toBeNull();
+  expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+});
+
+it('uses the device preview when cloud page fetches return a login screen', async () => {
+  jest.spyOn(globalThis, 'fetch').mockImplementation(async () => loginPage());
+  const result = await resolver.resolve({ ...job, clientPreview: {
+    caption: 'Roast 500g potatoes with 1 tbsp oil for 30 minutes.', thumbnailUrls: [],
+  } });
+  expect(result).toMatchObject({ kind: 'caption', caption: 'Roast 500g potatoes with 1 tbsp oil for 30 minutes.' });
+});
+
+it('validates and normalizes a device-provided thumbnail before using it', async () => {
+  jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(new Uint8Array(png)));
+  const result = await resolver.resolve({ ...job, clientPreview: {
+    caption: 'Roast 500g potatoes with 1 tbsp oil for 30 minutes.',
+    thumbnailUrls: ['https://cdn.example.com/dish.png'],
+  } });
+  if (result.kind !== 'caption' || !result.localThumbnailPath) throw Error('Expected image');
+  localFiles.push(result.localThumbnailPath);
+  expect((await sharp(result.localThumbnailPath).metadata()).format).toBe('jpeg');
+  expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+});
+
+it('does not trust a login caption supplied by an old or modified client', async () => {
+  jest.spyOn(globalThis, 'fetch').mockImplementation(async () => loginPage());
+  await expect(resolver.resolve({ ...job, clientPreview: {
+    caption: 'Welcome back to Instagram. Sign in to see more.',
+    thumbnailUrls: ['https://cdn.example.com/logo.png'],
+  } })).rejects.toMatchObject({ code: 'SOURCE_NOT_ACCESSIBLE' });
+  expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 });
