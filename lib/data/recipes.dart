@@ -53,95 +53,11 @@ class Ingredient {
 }
 
 class CookingStep {
-  const CookingStep({
-    required this.instruction,
-    this.timerSeconds,
-  });
+  const CookingStep({required this.instruction, this.timerSeconds});
 
   final String instruction;
   final int? timerSeconds;
 }
-
-const trendingRecipes = [
-  Recipe(
-    title: 'Spiced Garden Shakshuka',
-    imageUrl:
-        'https://images.unsplash.com/photo-1590412208529-c3fbfe6b5922?w=800&q=80',
-    rating: 4.9,
-    mins: 25,
-    kcal: 320,
-  ),
-  Recipe(
-    title: 'Herb Butter Salmon Bowl',
-    imageUrl:
-        'https://images.unsplash.com/photo-1467003909585-2f8a72700288?w=800&q=80',
-    rating: 4.8,
-    mins: 30,
-    kcal: 410,
-  ),
-  Recipe(
-    title: 'Roasted Veggie Grain Bowl',
-    imageUrl:
-        'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&q=80',
-    rating: 4.7,
-    mins: 20,
-    kcal: 280,
-  ),
-];
-
-const proteinRecipes = [
-  Recipe(
-    title: 'Lemon Herb Chicken',
-    imageUrl:
-        'https://images.unsplash.com/photo-1598103442097-8b74394b95c6?w=600&q=80',
-    proteinG: 32,
-    prepLabel: '10 min prep',
-  ),
-  Recipe(
-    title: 'Seared Tuna Steak',
-    imageUrl:
-        'https://images.unsplash.com/photo-1579584425555-c3ce17fd4351?w=600&q=80',
-    proteinG: 38,
-    prepLabel: '15 min prep',
-  ),
-  Recipe(
-    title: 'Greek Yogurt Parfait',
-    imageUrl:
-        'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=600&q=80',
-    proteinG: 24,
-    prepLabel: '5 min prep',
-  ),
-];
-
-const recommendedRecipes = [
-  Recipe(
-    title: 'Creamy Roasted Squash Soup',
-    imageUrl:
-        'https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?w=400&q=80',
-    tags: '210 kcal · Vegan · 35m',
-    mins: 35,
-    kcal: 210,
-    difficulty: 'Easy',
-  ),
-  Recipe(
-    title: 'Avocado Egg Toast',
-    imageUrl:
-        'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=400&q=80',
-    tags: '340 kcal · High Protein · 12m',
-    mins: 12,
-    kcal: 340,
-    difficulty: 'Easy',
-  ),
-  Recipe(
-    title: 'Miso Glazed Eggplant',
-    imageUrl:
-        'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=400&q=80',
-    tags: '180 kcal · Keto Friendly · 25m',
-    mins: 25,
-    kcal: 180,
-    difficulty: 'Medium',
-  ),
-];
 
 const categories = [
   CategoryItem(
@@ -285,7 +201,5 @@ const cookingSteps = [
   CookingStep(
     instruction: 'Assemble bowls with kale, potatoes, and chickpeas.',
   ),
-  CookingStep(
-    instruction: 'Drizzle with tahini sauce and serve warm.',
-  ),
+  CookingStep(instruction: 'Drizzle with tahini sauce and serve warm.'),
 ];

@@ -1,11 +1,11 @@
 {
-    "name": "terracota",
-    "short_name": "terracota",
+    "name": "CookSense",
+    "short_name": "CookSense",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "CookSense — nutrition & recipe companion.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

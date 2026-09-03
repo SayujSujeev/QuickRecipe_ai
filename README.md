@@ -1,4 +1,4 @@
-# terracota
+# CookSense
 
 A new Flutter project.
 
